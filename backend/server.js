@@ -1,0 +1,228 @@
+// server.js
+import bcrypt from "bcrypt";
+import jwt from "jsonwebtoken";
+import express from "express";
+import cors from "cors";
+import pool from "./connection.js";
+import { hashPassword } from "./hashPasswords.js";
+
+const app = express();
+const secretKey = process.env.JWT_SECRET || "AAA"; // Set up a strong secret in .env
+
+// Middleware to parse JSON requests
+app.use(express.json());
+app.use(cors());
+
+// Middleware to verify the JWT and extract userId
+const verifyToken = (req, res, next) => {
+  const token = req.headers["authorization"]?.split(" ")[1]; // Get the token from the Authorization header
+
+  if (!token) {
+    return res.status(401).json({ error: "Access denied. No token provided." });
+  }
+
+  try {
+    const decoded = jwt.verify(token, secretKey);
+    req.userId = decoded.userId; // Attach userId to request object
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: "Invalid token." });
+  }
+};
+
+// Retrieve logged-in user data
+app.get("/api/user", verifyToken, (req, res) => {
+  const userId = req.userId;
+
+  const query = `SELECT first_name, user_name FROM users WHERE user_id = ?`;
+  pool.query(query, [userId], (err, results) => {
+    if (err) {
+      console.error("Error fetching user data:", err);
+      res.status(500).json({ error: "Database query failed" });
+      return;
+    }
+
+    if (results.length === 0) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+
+    res.json(results[0]);
+  });
+});
+
+/// Get Calendar info
+app.get("/api/calendar", (req, res) => {
+  const query = `
+    SELECT 
+      calendar.calendar_id,
+      calendar.day,
+      calendar.class_time,
+      calendar.duration,
+      calendar.fitness_level,
+      classes.class_name,
+      trainer.first_name AS trainer_first_name,
+      trainer.last_name AS trainer_last_name
+    FROM calendar
+    JOIN classes ON calendar.class_id = classes.class_id
+    JOIN trainer ON calendar.trainer_id = trainer.trainer_id
+  `;
+
+  pool.query(query, (err, results) => {
+    if (err) {
+      console.error("Error fetching data:", err);
+      res.status(500).json({ error: "Database query failed" });
+      return;
+    }
+    res.json(results);
+  });
+});
+
+// Get Blog Information
+app.get("/api/blog", (req, res) => {
+  const query = `
+    SELECT blog.blog_id, blog.blog_data, blog.user_id, users.user_name
+    FROM blog 
+    JOIN users ON blog.user_id = users.user_id
+  `;
+
+  pool.query(query, (err, results) => {
+    if (err) {
+      console.error("Error fetching blog:", err);
+      res.status(500).json({ error: "Database query failed" });
+      return;
+    }
+    res.json(results);
+  });
+});
+
+// Endpoint to post a new comment to the `blog` table
+app.post("/api/newComment", verifyToken, (req, res) => {
+  const userId = req.userId;
+  const { blog_data } = req.body;
+
+  if (!blog_data) {
+    return res.status(400).json({ error: "Comment text is required" });
+  }
+
+  const query = "INSERT INTO blog (blog_data, user_id) VALUES (?, ?)";
+  pool.query(query, [blog_data, userId], (err, result) => {
+    if (err) {
+      console.error("Error posting comment:", err);
+      return res.status(500).json({ error: "Database query failed" });
+    }
+    res.status(201).json({
+      message: "Comment posted successfully",
+      commentId: result.insertId,
+    });
+  });
+});
+
+// Delete a comment
+app.delete("/api/deleteComment/:commentId", verifyToken, (req, res) => {
+  const userId = req.userId; // Extracted from the verified token
+  const commentId = req.params.commentId;
+
+  // Check if the comment belongs to the user
+  const checkQuery = "SELECT user_id FROM blog WHERE blog_id = ?";
+  pool.query(checkQuery, [commentId], (err, results) => {
+    if (err) {
+      console.error("Error checking comment ownership:", err);
+      return res.status(500).json({ error: "Database query failed" });
+    }
+
+    if (results.length === 0) {
+      return res.status(404).json({ error: "Comment not found" });
+    }
+
+    if (results[0].user_id !== userId) {
+      return res
+        .status(403)
+        .json({ error: "You are not authorized to delete this comment" });
+    }
+
+    // Delete the comment if ownership is confirmed
+    const deleteQuery = "DELETE FROM blog WHERE blog_id = ?";
+    pool.query(deleteQuery, [commentId], (err) => {
+      if (err) {
+        console.error("Error deleting comment:", err);
+        return res.status(500).json({ error: "Database query failed" });
+      }
+      res.status(200).json({ message: "Comment deleted successfully" });
+    });
+  });
+});
+
+// Login route
+app.post("/api/login", (req, res) => {
+  const { username, password } = req.body;
+  const query = `SELECT * FROM users WHERE user_name = ?`;
+
+  pool.query(query, [username], (err, results) => {
+    if (err) {
+      console.error("Error executing query:", err);
+      res.status(500).send("Server error");
+      return;
+    }
+
+    if (results.length === 0) {
+      res.status(401).send("Invalid credentials");
+      return;
+    }
+
+    const user = results[0];
+
+    bcrypt.compare(password, user.password, (err, isMatch) => {
+      if (err) {
+        console.error("Error comparing passwords:", err);
+        res.status(500).send("Server error");
+        return;
+      }
+
+      if (!isMatch) {
+        res.status(401).send("Invalid credentials");
+        return;
+      }
+
+      const token = jwt.sign(
+        { userId: user.user_id, role: user.user_role }, // Updated 'user'
+        secretKey,
+        { expiresIn: "1h" }
+      );
+
+      res.json({ token, role: user.user_role });
+    });
+  });
+});
+
+// Registration route
+app.post("/api/register", async (req, res) => {
+  const { firstName, lastName, userName, userRole, password } = req.body;
+
+  try {
+    // Directly hash the password without checking if it's already hashed
+    const hashedPassword = await hashPassword(password);
+
+    const query =
+      "INSERT INTO users (first_name, last_name, user_name, user_role, password) VALUES (?, ?, ?, ?, ?)";
+    const values = [firstName, lastName, userName, userRole, hashedPassword];
+
+    pool.query(query, values, (err, results) => {
+      if (err) {
+        console.error("Error inserting user:", err);
+        res.status(500).json({ error: "Database error" });
+      } else {
+        res.status(201).json({ message: "User registered successfully" });
+      }
+    });
+  } catch (error) {
+    console.error("Error hashing password:", error);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+// Start the server
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server is running on http://localhost:${PORT}`);
+});
