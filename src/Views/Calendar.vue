@@ -1,60 +1,139 @@
 <template>
-  <div class="m-20 p-10 h-screen">
-    <h1>Calendar Events</h1>
-    <vue-cal
-      hide-view-selector
-      hide-title-bar
-      view="week"
-      :time-cell-height="110"
-      hide-weekends
-      :time-from="8 * 60"
-      :time-to="19 * 60"
-      :disable-views="['years', 'year', 'month', 'day']"
-      :events="calendarData"
-      :editable-events="{
-        title: false,
-        drag: false,
-        resize: false,
-        delete: false,
-        create: false,
-      }"
+  <div class="mx-20 mt-20 p-10 h-screen flex flex-col">
+    <h1 class="text-2xl font-bold mb-5">Weekly Calendar Events</h1>
+    <div class="calendar-container flex-1">
+      <div class="flex">
+        <!-- Time Slots Column -->
+        <div class="flex flex-col w-12">
+          <div class="h-10"></div>
+          <div
+            v-for="hour in timeSlots"
+            :key="hour"
+            class="time-slot flex items-center justify-center text-gray-500 text-sm"
+          >
+            {{ hour }}
+          </div>
+        </div>
+
+        <!-- Days of Week Columns -->
+        <div class="flex-1 grid grid-cols-5 gap-0 border-t border-l">
+          <div
+            v-for="day in daysOfWeek"
+            :key="day"
+            class="text-center font-bold py-2 border-b border-r text-sm"
+          >
+            {{ day }}
+          </div>
+
+          <!-- Time Slots for Each Day -->
+          <div
+            v-for="day in daysOfWeek"
+            :key="day"
+            class="flex flex-col border-r"
+          >
+            <div
+              v-for="slot in timeSlots"
+              :key="slot"
+              class="time-slot relative border-b cursor-pointer hover:bg-gray-100"
+            >
+              <div
+                onclick="bookClass"
+                v-for="event in filteredEvents(day, slot)"
+                :key="event.id"
+                class="absolute inset-0 bg-violet-300 text-black text-xs p-1 rounded flex flex-col justify-center items-center"
+              >
+                <div class="font-bold">{{ event.class_name }}</div>
+                <div class="font-semibold text-xs">
+                  {{ event.fitness_level }}
+                </div>
+                <div class="font-semibold text-xs">
+                  Start time:
+                  <span>
+                    {{ event.class_time }} - {{ event.duration }} mins</span
+                  >
+                </div>
+                <div class="text-xs">Trainer: {{ event.trainer }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- No Events Message -->
+    <div
+      v-if="calendarData.length === 0"
+      class="mt-5 text-center text-gray-500"
     >
-    </vue-cal>
+      No events loaded
+    </div>
+
+    <!-- Error Message -->
+    <div v-if="error" class="text-red-500 mt-5">{{ error }}</div>
   </div>
 </template>
 
 <script>
 import axios from "axios";
-import VueCal from "vue-cal";
-import "vue-cal/dist/vuecal.css";
 
 export default {
-  name: "Calendar",
-  components: {
-    VueCal,
-  },
+  name: "CustomCalendar",
   data() {
     return {
-      // Define the events array here to bind to the Vue Cal
-      calendarData: [
-        {
-          start: "2024-11-13 08:00", // Use ISO date format
-          end: "2024-11-13 9:00",
-          title: "Pilates",
-          content: " Beginner <p>Trainer</p>",
-          class: "blue-event",
-          deletable: false,
-          resizable: false,
-          draggable: false,
-        },
+      calendarData: [],
+      error: null,
+      daysOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
+      timeSlots: [
+        "07:00",
+        "08:00",
+        "09:00",
+        "10:00",
+        "11:00",
+        "12:00",
+        "13:00",
+        "14:00",
+        "15:00",
+        "16:00",
+        "17:00",
       ],
     };
+  },
+  mounted() {
+    this.fetchCalendarData();
+  },
+  methods: {
+    async fetchCalendarData() {
+      try {
+        const response = await axios.get("http://localhost:3000/api/calendar");
+        this.calendarData = response.data.map((event) => ({
+          id: event.calendar_id,
+          day: event.day,
+          class_time: event.class_time.substring(0, 5), // Keep only HH:MM
+          duration: event.duration,
+          fitness_level: event.fitness_level,
+          class_name: event.class_name,
+          trainer: `${event.trainer_first_name} ${event.trainer_last_name}`,
+        }));
+      } catch (error) {
+        this.error = error.message;
+      }
+    },
+    filteredEvents(day, timeSlot) {
+      return this.calendarData.filter((event) => {
+        const eventTime = event.class_time.substring(0, 5);
+        return event.day === day && eventTime === timeSlot;
+      });
+    },
   },
 };
 </script>
 
-<style>
-.vuecal {
-  font-family: Arial, sans-serif;
+<style scoped>
+.time-slot {
+  height: 80px; /* Adjust this to your preferred height */
+}
+.calendar-container {
+  max-height: calc(100vh - 200px); /* Adjust based on your footer height */
+  overflow-y: auto; /* Makes it scrollable if content overflows */
 }
 </style>

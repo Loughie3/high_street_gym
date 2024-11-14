@@ -78,6 +78,35 @@ app.get("/api/calendar", (req, res) => {
   });
 });
 
+// Endpoint to book a class
+app.post("/api/bookClass", verifyToken, (req, res) => {
+  const userId = req.userId; // Extracted from the verified token
+  const { calendarId } = req.body; // The ID of the class to book
+
+  if (!calendarId) {
+    return res.status(400).json({ error: "Class ID is required for booking" });
+  }
+
+  const query = `INSERT INTO bookings (user_id, calendar_id) VALUES (?, ?)`;
+  pool.query(query, [userId, calendarId], (err, result) => {
+    if (err) {
+      if (err.code === "ER_DUP_ENTRY") {
+        return res
+          .status(409)
+          .json({ error: "You have already booked this class" });
+      }
+      console.error("Error booking class:", err);
+      return res.status(500).json({ error: "Database query failed" });
+    }
+    res
+      .status(201)
+      .json({
+        message: "Class booked successfully",
+        bookingId: result.insertId,
+      });
+  });
+});
+
 // Get Blog Information
 app.get("/api/blog", (req, res) => {
   const query = `
