@@ -37,10 +37,10 @@
               class="time-slot relative border-b cursor-pointer hover:bg-gray-100"
             >
               <div
-                onclick="bookClass"
                 v-for="event in filteredEvents(day, slot)"
                 :key="event.id"
                 class="absolute inset-0 bg-violet-300 text-black text-xs p-1 rounded flex flex-col justify-center items-center"
+                @click="bookClass(event.id)"
               >
                 <div class="font-bold">{{ event.class_name }}</div>
                 <div class="font-semibold text-xs">
@@ -68,8 +68,22 @@
       No events loaded
     </div>
 
-    <!-- Error Message -->
-    <div v-if="error" class="text-red-500 mt-5">{{ error }}</div>
+    <!-- Modal -->
+    <div
+      v-if="showModal"
+      class="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50"
+    >
+      <div class="bg-white p-5 rounded shadow-lg w-1/3 text-center">
+        <h2 class="text-xl font-bold text-violet-500 mb-4">Booking Error</h2>
+        <p class="text-gray-700 mb-4">{{ error }}</p>
+        <button
+          @click="closeModal"
+          class="bg-violet-500 text-white px-4 py-2 rounded"
+        >
+          Close
+        </button>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -96,6 +110,7 @@ export default {
         "16:00",
         "17:00",
       ],
+      showModal: false,
     };
   },
   mounted() {
@@ -105,17 +120,60 @@ export default {
     async fetchCalendarData() {
       try {
         const response = await axios.get("http://localhost:3000/api/calendar");
-        this.calendarData = response.data.map((event) => ({
-          id: event.calendar_id,
-          day: event.day,
-          class_time: event.class_time.substring(0, 5), // Keep only HH:MM
-          duration: event.duration,
-          fitness_level: event.fitness_level,
-          class_name: event.class_name,
-          trainer: `${event.trainer_first_name} ${event.trainer_last_name}`,
-        }));
+        if (response.data && response.data.length > 0) {
+          this.calendarData = response.data.map((event) => ({
+            id: event.calendar_id,
+            day: event.day,
+            class_time: event.class_time.substring(0, 5), // Keep only HH:MM
+            duration: event.duration,
+            fitness_level: event.fitness_level,
+            class_name: event.class_name,
+            trainer: `${event.trainer_first_name} ${event.trainer_last_name}`,
+          }));
+        } else {
+          console.warn("No calendar events found.");
+          this.calendarData = [];
+        }
       } catch (error) {
         this.error = error.message;
+        console.error("Error fetching calendar data:", error);
+      }
+    },
+    async bookClass(calendarId) {
+      try {
+        const confirmed = confirm("Are you sure you want to book this class?");
+        if (!confirmed) return;
+
+        const token = localStorage.getItem("authToken");
+        if (!token) {
+          this.error = "User not logged in. Please sign in to make a booking";
+          this.showModal = true;
+          return;
+        }
+
+        const response = await axios.post(
+          "http://localhost:3000/api/bookClass",
+          { calendarId },
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+
+        alert(response.data.message);
+        this.error = null;
+      } catch (error) {
+        if (error.response && error.response.status === 409) {
+          // Show the modal with a specific message
+          this.error = "This class is already booked.";
+          this.showModal = true;
+        } else {
+          // Handle other errors
+          this.error = error.response
+            ? error.response.data.error
+            : "Booking failed.";
+          this.showModal = true;
+        }
+        console.error("Error booking class:", error);
       }
     },
     filteredEvents(day, timeSlot) {
@@ -123,6 +181,10 @@ export default {
         const eventTime = event.class_time.substring(0, 5);
         return event.day === day && eventTime === timeSlot;
       });
+    },
+    closeModal() {
+      this.showModal = false;
+      this.error = null;
     },
   },
 };

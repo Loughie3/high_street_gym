@@ -29,7 +29,7 @@ export default {
   },
   mounted() {
     // Initial check for token
-    this.isLoggedIn = !!localStorage.getItem("token");
+    this.isLoggedIn = !!localStorage.getItem("authToken");
 
     // Listen for storage changes (e.g., login/logout in another tab)
     window.addEventListener("storage", this.checkLoginStatus);
@@ -40,7 +40,7 @@ export default {
   },
   methods: {
     checkLoginStatus() {
-      this.isLoggedIn = !!localStorage.getItem("token");
+      this.isLoggedIn = !!localStorage.getItem("authToken");
     },
   },
 };

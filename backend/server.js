@@ -15,17 +15,20 @@ app.use(cors());
 
 // Middleware to verify the JWT and extract userId
 const verifyToken = (req, res, next) => {
-  const token = req.headers["authorization"]?.split(" ")[1]; // Get the token from the Authorization header
+  const token = req.headers["authorization"]?.split(" ")[1]; // Extract token
 
   if (!token) {
+    console.error("No token provided");
     return res.status(401).json({ error: "Access denied. No token provided." });
   }
 
   try {
     const decoded = jwt.verify(token, secretKey);
-    req.userId = decoded.userId; // Attach userId to request object
+    console.log("Decoded token:", decoded); // Log the decoded token for debugging
+    req.userId = decoded.userId; // Attach userId to request
     next();
   } catch (err) {
+    console.error("Invalid token:", err.message);
     return res.status(401).json({ error: "Invalid token." });
   }
 };
@@ -48,6 +51,37 @@ app.get("/api/user", verifyToken, (req, res) => {
     }
 
     res.json(results[0]);
+  });
+});
+
+// Fetch booked classes for the logged-in user
+app.get("/api/bookedClasses", verifyToken, (req, res) => {
+  const userId = req.userId;
+
+  const query = `
+    SELECT 
+      booking.booking_id,
+      calendar.day,
+      calendar.class_time,
+      calendar.duration,
+      calendar.fitness_level,
+      classes.class_name,
+      trainer.first_name AS trainer_first_name,
+      trainer.last_name AS trainer_last_name
+    FROM booking
+    JOIN calendar ON booking.calendar_id = calendar.calendar_id
+    JOIN classes ON calendar.class_id = classes.class_id
+    JOIN trainer ON calendar.trainer_id = trainer.trainer_id
+    WHERE booking.user_id = ?
+  `;
+
+  pool.query(query, [userId], (err, results) => {
+    if (err) {
+      console.error("Error fetching booked classes:", err);
+      return res.status(500).json({ error: "Database query failed" });
+    }
+
+    res.json(results);
   });
 });
 
@@ -84,26 +118,40 @@ app.post("/api/bookClass", verifyToken, (req, res) => {
   const { calendarId } = req.body; // The ID of the class to book
 
   if (!calendarId) {
+    console.error("Class ID is required for booking.");
     return res.status(400).json({ error: "Class ID is required for booking" });
   }
 
-  const query = `INSERT INTO bookings (user_id, calendar_id) VALUES (?, ?)`;
-  pool.query(query, [userId, calendarId], (err, result) => {
+  // Check if the user has already booked the class
+  const checkQuery = `SELECT * FROM booking WHERE user_id = ? AND calendar_id = ?`;
+
+  pool.query(checkQuery, [userId, calendarId], (err, results) => {
     if (err) {
-      if (err.code === "ER_DUP_ENTRY") {
-        return res
-          .status(409)
-          .json({ error: "You have already booked this class" });
-      }
-      console.error("Error booking class:", err);
+      console.error("Error checking for existing booking:", err);
       return res.status(500).json({ error: "Database query failed" });
     }
-    res
-      .status(201)
-      .json({
+
+    if (results.length > 0) {
+      // If a record is found, it means the user has already booked this class
+      return res
+        .status(409)
+        .json({ error: "You have already booked this class" });
+    }
+
+    // Proceed to book the class if no existing booking is found
+    const insertQuery = `INSERT INTO booking (user_id, calendar_id) VALUES (?, ?)`;
+
+    pool.query(insertQuery, [userId, calendarId], (err, result) => {
+      if (err) {
+        console.error("Error executing booking query:", err);
+        return res.status(500).json({ error: "Database query failed" });
+      }
+
+      res.status(201).json({
         message: "Class booked successfully",
         bookingId: result.insertId,
       });
+    });
   });
 });
 

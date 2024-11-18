@@ -87,7 +87,7 @@ export default {
           password: this.password,
         });
         const { token, role } = response.data;
-        localStorage.setItem("token", token);
+        localStorage.setItem("authToken", token);
         localStorage.setItem("user_role", role);
 
         this.$emit("login-success");
