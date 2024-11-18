@@ -5,6 +5,7 @@ import Calendar from "./Views/Calendar.vue";
 import SignUp from "./Views/SignUp.vue";
 import Blog from "./Views/Blog.vue";
 import MemberDash from "./Views/MemberDash.vue";
+import AdminDash from "./Views/AdminDash.vue";
 
 const routes = [
   {
@@ -30,6 +31,8 @@ const routes = [
   { path: "/blog", name: "Blog", component: Blog },
 
   { path: "/memberDash", name: "MemberDash", component: MemberDash },
+
+  { path: "/adminDash", name: "AdminDash", component: AdminDash },
 
   // Add more routes as needed
 ];

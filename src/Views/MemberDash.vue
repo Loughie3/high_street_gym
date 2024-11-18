@@ -2,20 +2,14 @@
   <div
     class="min-h-screen flex items-center justify-center mt-20 bg-violet-100"
   >
-    <!-- Middle Column -->
     <div class="w-full max-w-2xl bg-white shadow-lg rounded-lg p-8">
-      <!-- Booked Classes Section -->
       <h1 class="text-3xl font-bold text-black mb-6 text-center">
         Membership Dashboard
       </h1>
-
-      <!-- User Welcome -->
       <div class="text-xl text-black mb-10 text-center">
         Welcome back, <span class="font-bold">{{ user.first_name }}</span
         >!
       </div>
-
-      <!-- Booked Classes -->
       <div>
         <h2 class="text-2xl font-semibold text-violet-800 mb-4 text-center">
           Your Booked Classes

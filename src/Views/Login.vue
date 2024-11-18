@@ -87,11 +87,17 @@ export default {
           password: this.password,
         });
         const { token, role } = response.data;
+
+        // Store the token and role in local storage
         localStorage.setItem("authToken", token);
         localStorage.setItem("user_role", role);
 
-        this.$emit("login-success");
-        this.$router.push("/memberDash");
+        // Redirect based on role
+        if (role === "admin") {
+          this.$router.push("/adminDash");
+        } else {
+          this.$router.push("/memberDash");
+        }
       } catch (error) {
         console.error("Login error:", error);
         alert("Invalid credentials");

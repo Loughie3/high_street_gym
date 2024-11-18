@@ -5,9 +5,14 @@ import express from "express";
 import cors from "cors";
 import pool from "./connection.js";
 import { hashPassword } from "./hashPasswords.js";
+import multer from "multer";
+import mysql from "mysql";
+import fs from "fs";
+import xml2js from "xml2js";
 
 const app = express();
 const secretKey = process.env.JWT_SECRET || "AAA"; // Set up a strong secret in .env
+const upload = multer({ dest: "uploads/" });
 
 // Middleware to parse JSON requests
 app.use(express.json());
@@ -32,6 +37,83 @@ const verifyToken = (req, res, next) => {
     return res.status(401).json({ error: "Invalid token." });
   }
 };
+
+//Upload users with XML doc
+function xmlToMySQL(xmlData) {
+  return new Promise((resolve, reject) => {
+    xml2js.parseString(xmlData, async (err, result) => {
+      if (err) {
+        return reject(err);
+      }
+
+      try {
+        const users = result.users.user.map(async (item) => {
+          const hashedPassword = await bcrypt.hash(item.password[0], 10); // Hash password
+          return [
+            item.user_id[0],
+            item.first_name[0],
+            item.last_name[0],
+            item.user_name[0],
+            item.user_role[0],
+            hashedPassword, // Use hashed password
+          ];
+        });
+
+        const resolvedUsers = await Promise.all(users); // Wait for all hashing to complete
+        resolve(resolvedUsers);
+      } catch (hashingError) {
+        reject(hashingError);
+      }
+    });
+  });
+}
+
+app.post("/upload", upload.single("xmlFile"), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: "No file uploaded." });
+  }
+
+  fs.readFile(req.file.path, "utf8", async (err, data) => {
+    if (err) {
+      fs.unlink(req.file.path, () => {}); // Cleanup uploaded file
+      return res.status(500).json({ error: "Error reading file." });
+    }
+
+    try {
+      const users = await xmlToMySQL(data); // Parse XML and hash passwords
+
+      const query = `
+        INSERT INTO users 
+        (user_id, first_name, last_name, user_name, user_role, password) 
+        VALUES ? 
+        ON DUPLICATE KEY UPDATE 
+          first_name=VALUES(first_name), 
+          last_name=VALUES(last_name), 
+          user_name=VALUES(user_name), 
+          user_role=VALUES(user_role), 
+          password=VALUES(password)
+      `;
+
+      pool.query(query, [users], (err, result) => {
+        fs.unlink(req.file.path, () => {}); // Cleanup uploaded file
+        if (err) {
+          console.error("Database error:", err);
+          return res
+            .status(500)
+            .json({ error: "Error inserting data into database." });
+        }
+        res.status(200).json({
+          message: "Data processed successfully.",
+          inserted: result.affectedRows,
+        });
+      });
+    } catch (error) {
+      fs.unlink(req.file.path, () => {}); // Cleanup uploaded file
+      console.error("XML Processing error:", error);
+      res.status(500).json({ error: "Error processing XML data." });
+    }
+  });
+});
 
 // Retrieve logged-in user data
 app.get("/api/user", verifyToken, (req, res) => {

@@ -9,11 +9,16 @@
       <ul class="menu menu-horizontal text-lg px-1">
         <li><a class="hover:bg-violet-500" href="/">Home</a></li>
         <li><a class="hover:bg-violet-500" href="/calendar">Calendar</a></li>
-        <li v-if="isLoggedIn">
+        <li v-if="isLoggedIn && userRole === 'member'">
           <a class="hover:bg-violet-500" href="/memberDash">Member Dashboard</a>
         </li>
+        <li v-if="isLoggedIn && userRole === 'admin'">
+          <a class="hover:bg-violet-500" href="/adminDash">Admin Dashboard</a>
+        </li>
         <li><a class="hover:bg-violet-500" href="/blog">Blog</a></li>
-        <li><a class="hover:bg-violet-500" href="/login">Login</a></li>
+        <li>
+          <a class="hover:bg-violet-500" href="/login">Login</a>
+        </li>
       </ul>
     </div>
   </div>
@@ -25,11 +30,12 @@ export default {
   data() {
     return {
       isLoggedIn: false,
+      userRole: null,
     };
   },
   mounted() {
-    // Initial check for token
-    this.isLoggedIn = !!localStorage.getItem("authToken");
+    // Check login status and role on mount
+    this.checkLoginStatus();
 
     // Listen for storage changes (e.g., login/logout in another tab)
     window.addEventListener("storage", this.checkLoginStatus);
@@ -41,6 +47,14 @@ export default {
   methods: {
     checkLoginStatus() {
       this.isLoggedIn = !!localStorage.getItem("authToken");
+      this.userRole = localStorage.getItem("user_role");
+    },
+    logout() {
+      localStorage.removeItem("authToken");
+      localStorage.removeItem("user_role");
+      this.isLoggedIn = false;
+      this.userRole = null;
+      this.$router.push("/login");
     },
   },
 };
