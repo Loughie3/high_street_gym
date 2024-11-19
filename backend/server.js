@@ -47,22 +47,34 @@ function xmlToMySQL(xmlData) {
       }
 
       try {
-        const users = result.users.user.map(async (item) => {
-          const hashedPassword = await bcrypt.hash(item.password[0], 10); // Hash password
-          return [
-            item.user_id[0],
-            item.first_name[0],
-            item.last_name[0],
-            item.user_name[0],
-            item.user_role[0],
-            hashedPassword, // Use hashed password
-          ];
+        const classData = [];
+        const calendarData = [];
+
+        result.classes.class.forEach((cls) => {
+          // Push class data
+          classData.push([
+            cls.class_id[0],
+            cls.class_name[0],
+            cls.trainer_id[0],
+          ]);
+
+          // Push calendar data
+          cls.calendar[0].entry.forEach((cal) => {
+            calendarData.push([
+              cal.calendar_id[0],
+              cal.day[0],
+              cal.class_time[0],
+              cal.duration[0],
+              cal.fitness_level[0],
+              cls.class_id[0],
+              cls.trainer_id[0],
+            ]);
+          });
         });
 
-        const resolvedUsers = await Promise.all(users); // Wait for all hashing to complete
-        resolve(resolvedUsers);
-      } catch (hashingError) {
-        reject(hashingError);
+        resolve({ classData, calendarData });
+      } catch (parsingError) {
+        reject(parsingError);
       }
     });
   });
@@ -75,41 +87,42 @@ app.post("/upload", upload.single("xmlFile"), (req, res) => {
 
   fs.readFile(req.file.path, "utf8", async (err, data) => {
     if (err) {
-      fs.unlink(req.file.path, () => {}); // Cleanup uploaded file
+      fs.unlink(req.file.path, () => {});
       return res.status(500).json({ error: "Error reading file." });
     }
 
     try {
-      const users = await xmlToMySQL(data); // Parse XML and hash passwords
+      const { classData, calendarData } = await xmlToMySQL(data);
 
-      const query = `
-        INSERT INTO users 
-        (user_id, first_name, last_name, user_name, user_role, password) 
-        VALUES ? 
-        ON DUPLICATE KEY UPDATE 
-          first_name=VALUES(first_name), 
-          last_name=VALUES(last_name), 
-          user_name=VALUES(user_name), 
-          user_role=VALUES(user_role), 
-          password=VALUES(password)
+      // Insert class data
+      const classQuery = `
+        INSERT INTO classes (class_id, class_name, trainer_id)
+        VALUES ?
+        ON DUPLICATE KEY UPDATE
+          class_name=VALUES(class_name),
+          trainer_id=VALUES(trainer_id)
       `;
+      await pool.query(classQuery, [classData]);
 
-      pool.query(query, [users], (err, result) => {
-        fs.unlink(req.file.path, () => {}); // Cleanup uploaded file
-        if (err) {
-          console.error("Database error:", err);
-          return res
-            .status(500)
-            .json({ error: "Error inserting data into database." });
-        }
-        res.status(200).json({
-          message: "Data processed successfully.",
-          inserted: result.affectedRows,
-        });
-      });
+      // Insert calendar data
+      const calendarQuery = `
+        INSERT INTO calendar (calendar_id, day, class_time, duration, fitness_level, class_id, trainer_id)
+        VALUES ?
+        ON DUPLICATE KEY UPDATE
+          day=VALUES(day),
+          class_time=VALUES(class_time),
+          duration=VALUES(duration),
+          fitness_level=VALUES(fitness_level),
+          class_id=VALUES(class_id),
+          trainer_id=VALUES(trainer_id)
+      `;
+      await pool.query(calendarQuery, [calendarData]);
+
+      fs.unlink(req.file.path, () => {});
+      res.status(200).json({ message: "Data processed successfully." });
     } catch (error) {
-      fs.unlink(req.file.path, () => {}); // Cleanup uploaded file
-      console.error("XML Processing error:", error);
+      fs.unlink(req.file.path, () => {});
+      console.error("Error processing XML:", error);
       res.status(500).json({ error: "Error processing XML data." });
     }
   });
